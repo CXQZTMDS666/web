@@ -1,0 +1,198 @@
+/**
+ * 目标1：获取文章列表并展示
+ *  1.1 准备查询参数对象
+ *  1.2 获取文章列表数据
+ *  1.3 展示到指定的标签结构中
+ */
+
+//准备查询对象
+const queryObj = {
+    status:'', //文章状态（1-待审核，2-审核通过，‘’-全部）
+    channel_id:'',//文章频道id，不传为全部
+    page:1, //当前页码
+    per_page:5 //每页条数
+}
+let totalCount = 0 //文章总条数
+
+async function getContent(){
+    //获取文章列表数据
+    const res = await axios({
+        url: '/v1_0/mp/articles',
+        params:queryObj
+    })
+
+    totalCount = res.data.total_count
+    const contentList = res.data.results.map(item =>{
+        return `
+            <tr class=${item.id}>
+                <td>
+                    <img src='${item.cover.type===0 ?`https://img2.baidu.com/it/u=2640406343,1419332367&fm=253&fmt=auto&app=138&f=JPEG?w=708&h=500`: item.cover.images[0]}' alt="">
+                </td>
+                <td>${item.title}</td>
+                <td>
+                    ${item.status === 1 ?`<span class="badge text-bg-primary">待审核</span>`
+                        :`<span class="badge text-bg-success">审核通过</span>`
+                    }
+                </td>
+                <td>
+                    <span>${item.pubdate}</span>
+                </td>
+
+                <td data-id=${item.id}>
+                    <i class="bi bi-pencil-square edit"></i>
+                    <i class="bi bi-trash3 del"></i>
+                </td>
+            </tr>
+        `
+    }).join('')
+    document.querySelector('.art-list').innerHTML = contentList
+    document.querySelector('.total-count').innerHTML = `共${totalCount}条 共${Math.ceil(totalCount / queryObj.per_page)}页`
+    document.querySelector('.page-now').innerHTML = `第${queryObj.page}页`
+}
+getContent()
+
+
+
+
+/**
+ * 目标2：筛选文章列表
+ *  2.1 设置频道列表数据
+ *  2.2 监听筛选条件改变，保存查询信息到查询参数对象
+ *  2.3 点击筛选时，传递查询参数对象到服务器
+ *  2.4 获取匹配数据，覆盖到页面展示
+ */
+async function setChannels(){
+    const result = await axios({
+        url: '/v1_0/channels'
+    })
+
+    const channelsList = result.data.channels
+    const channelsStr = '<option value="" selected="">请选择文章频道</option>' + channelsList.map(item =>{
+        return `<option value="${item.id}">${item.name}</option>`
+    }).join('')
+    // document.querySelector('.form-select').innerHTML = channelsStr
+}
+setChannels()
+
+//获取筛选状态标记的数字
+document.querySelectorAll('.form-check-input').forEach(item =>{
+    item.addEventListener('change',e=>{
+        queryObj.status = e.target.value
+    })
+})
+//获取筛选频道
+// document.querySelector('.form-select').addEventListener('change',e=>{
+//     queryObj.channel_id = e.target.value
+// })
+
+document.querySelector('.sel-btn').addEventListener('click',()=>{
+
+    
+    getContent()
+})
+
+/**
+ * 目标3：分页功能
+ *  3.1 保存并设置文章总条数
+ *  3.2 点击下一页，做临界值判断，并切换页码参数并请求最新数据
+ *  3.3 点击上一页，做临界值判断，并切换页码参数并请求最新数据
+ */
+document.querySelector('.next').addEventListener('click',e=>{
+    //当前页码小于最大页码数
+    if(queryObj.page < Math.ceil(totalCount / queryObj.per_page)){
+        queryObj.page++
+        getContent()
+    }
+})
+document.querySelector('.last').addEventListener('click',e =>{
+    //大于一的时候再能翻到上一页
+    if(queryObj.page>1){
+        queryObj.page--
+        getContent()
+    }
+})
+
+/**
+ * 目标4：删除功能
+ *  4.1 关联文章 id 到删除图标
+ *  4.2 点击删除时，获取文章 id
+ *  4.3 调用删除接口，传递文章 id 到服务器
+ *  4.4 重新获取文章列表，并覆盖展示
+ *  4.5 删除最后一页的最后一条，需要自动向前翻页
+ */
+document.querySelector('.art-list').addEventListener('click',async e =>{
+    const delBtn = e.target.closest('i.del')
+    const dataId = e.target.closest('[data-id]')
+    if(delBtn && dataId){
+        const delId = dataId.dataset.id
+        const del = await axios({
+            method:'DELETE',
+            url: `/v1_0/mp/articles/${delId}`,
+        })
+
+        //删除最后一页的最后一条，自动向前翻页
+        const children = document.querySelector('.art-list').children
+        if(children.length === 1 && queryObj.page !== 1){
+            //数据已经删除了，在请求列表之前修改页码，请求后就会往前
+            queryObj.page--
+
+        }
+        getContent()
+    }
+})
+
+
+
+// 点击编辑时，获取文章 id，跳转到发布文章页面传递文章 id 过去
+document.querySelector('.art-list').addEventListener('click',e=>{
+    const editBtn = e.target.closest('i.edit')
+    const dataId = e.target.closest('[data-id]')
+    if(editBtn && dataId){
+        const editId = dataId.dataset.id
+
+        location.href = `../publish/index.html?id=${editId}`
+    }
+
+})
+
+// 获取元素
+
+const closeModalBtn = document.querySelector('.close-btn');
+const modalOverlay = document.querySelector('.modal-overlay');
+
+// 打开模态框
+document.querySelector('.art-list').addEventListener('click', async function(e) {
+  modalOverlay.style.display = 'flex';
+  document.body.classList.add('modal-open'); // 禁用页面滚动
+  console.log(e.target.closest('tr').className);
+  const articleId = e.target.closest('tr').className
+  const res = await axios({
+    url: `/v1_0/mp/articles/${articleId}`
+  })
+  console.log(res.data.title);
+  document.querySelector('.div-content').innerHTML = `
+    <h1>${res.data.title}</h1>
+    ${res.data.content}
+  `
+  
+
+});
+
+// 关闭模态框
+closeModalBtn.addEventListener('click', function() {
+  modalOverlay.style.display = 'none';
+  document.body.classList.remove('modal-open');
+});
+
+// 点击遮罩层也可以关闭（可选）
+modalOverlay.addEventListener('click', function(e) {
+  if (e.target === modalOverlay) {
+    modalOverlay.style.display = 'none';
+    document.body.classList.remove('modal-open');
+  }
+});
+
+
+
+
+
